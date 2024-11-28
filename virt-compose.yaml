@@ -1,0 +1,7 @@
+GLOBAL:
+  QEMU_URI: qemu:///system
+  VOLUME_PATH: /var/lib/libvirt/images
+  #BASE_FOLDER: "/etc/virt-compose"
+  BASE_FOLDER: .
+  VM_FOLDER: vm
+  METADATA_FOLDER: cloud-init

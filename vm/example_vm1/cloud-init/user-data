@@ -1,0 +1,17 @@
+#cloud-config
+
+# Setup Users with ssh keys so that I can log in into new machine
+ssh_pwauth: true
+
+users:
+    - name: michael
+      lock_passwd: False
+      plain_text_passwd: 'secret'
+      groups: adm, sudo
+      shell: /bin/bash
+      sudo: ALL=(ALL) NOPASSWD:ALL
+      ssh_authorized_keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC3TqVcYPRfNYqFWh/HsoSVwsYwkpOLeExRiOsNoLiP8kQ0icvItROP73Y5ptAuONRZw8nqVdfCA4U0YEsU9nMS1+sfEm3CdiA9wqslpIdnVVlUKApa0dphgAsWAwSPJv2AMs97vNbnpLDwPr8/e4ISnkLzA96aMFCI/1SWPyhcGeKshxkp9FdOE8Us9koo2995090vMN6BmclRJMYo5+iVpQhdb/Ge2pUhRhDKqYO22UbyCv7e+A5y5SSh/nl0xHScgMCuIe4ruSE2FAu4fm6zulqO4GOmh5hDmUx3pWWcAv/+FPaTvCO1OftnRkK/SFdJPLUxoLf4iWZONwUVPyxN IOT
+
+# set timezone for VM
+timezone: US/Central
