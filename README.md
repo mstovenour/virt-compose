@@ -38,7 +38,7 @@ This package is still under construction and not complete.  Please do not try to
 <!-- OVERVIEW -->
 ## Overview
 
-virt-compose is a script that mirrors lifecycle aspects of virsh and virt-install commands reading necessary inputs from a simple VM definition file in YAML.  It also dynamically manages USB host device passthrough; the primary motivation for the script.
+virt-compose is a script that mirrors lifecycle aspects of virsh and virt-install commands reading necessary inputs from a simple VM definition file in YAML.  It also dynamically manages USB host device passthrough with udev/systemd.
 
 ### Motivation
 Needed small, simple system to manage the lifecycle of KVM VMs on a home lab server.  Something similar to the functionality that Docker Compose brings to containers.  There are fully functional systems already available for KVM, mostly as GUIs, but those have steep learning curves and rapidly evolving feature sets that create breaking functionality churn.  I just wanted something simple to remember that is too small to need rapidly evolving functionality (i.e. stable over time).  A system where consumers can know that backward compatibility is always maintained.  The system just needs a few features that are primarily motivated by the need to manage hot-plug events for USB host passthrough while managing the lifecycle of VMs.  Base requirements:

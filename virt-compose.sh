@@ -37,17 +37,17 @@
 #  [X] Create Repository
 
 #  [X] Code install
-#  [ ]  ** Update install to create udev links
+#  [X]  ** Update install to create systemd service
 #  [X] Code undefine
-#  [ ]  ** Update undefine to remove udev links
+#  [X]  ** Update to remove systemd service
 #  [X] Code attach-device
 #  [X] Code detach-device
 #  [x] Code start
+#  [X]  ** Update to create udev links
 #  [ ] Code start-all
 #  [x] Code shutdown
+#  [X]  ** Update to remove udev links
 #  [ ] Code shutdown-all
-#  [x] Test with multiple identical devices
-#  [ ]  ** Test all use cases
 
 #  [ ] Fix: Start needs to check if VM is running and refuse to start
 #         Otherwise metadata and <hostdev> entries can get out of sync!
@@ -73,6 +73,9 @@
   CONFIG="virt-compose.yaml"
   VM_FOLDER="vm"
   METADATA_FOLDER="cloud-init"
+  BIN_FOLDER="/usr/bin"
+  SYSTEMD_FOLDER="/etc/systemd/system"
+  UDEV_RULES_FOLDER="/etc/udev/rules.d"
   DOMAIN_METADATA_URI="http://stovenour.net/libvirt"
   DOMAIN_METADATA_NS="stovenour"
 
@@ -182,18 +185,20 @@ install() {
       command_str+="${parm} "
   done
   command_str=${command_str::-1}
-  echo
-  echo $command_str
+  echo >&2 $command_str
 
-  (${command_str})
+  (${command_str}) >> /dev/null
   if [ $? -ne 0 ]; then
     echo >&2 "Error: virt-installed failed"
     return 1
   fi
+  echo >&2 ""
 
   # Create systemd service for USB host device hot-plug events
   #   NOTE:  vm name can not contain hyphen or systemd %j breaks
-  cat << 'EOF' | sudo tee ${SYSTEMD_FOLDER}/virt-compose-${cfn_vm_name}@.service >> /dev/null
+  local systemd_file="${SYSTEMD_FOLDER}/virt-compose-${cfn_vm_name}@.service"
+  echo >&2 "Info: Creating systemd service: ${systemd_file}"
+  cat << 'EOF' | sudo tee ${systemd_file} >> /dev/null
 [Unit]
 Description=virt-compose: Manage device hot-plug event for %j@/%I
 
@@ -209,20 +214,6 @@ EOF
   sudo systemctl daemon-reload
 
   return 0
-
-# virt-install --import \
-# --name ${cfn_vm_name} \
-# --os-variant ${cfn_os_variant} \
-# --ram 1024 \
-# --vcpu 1 \
-# --disk ${cfn_boot_path},format=qcow2 \
-# --disk path=${cfn_cidata_path} \
-# --network=bridge=br0,model=virtio \
-# --noautoconsole \
-# --serial pty \
-# --console pty \
-# --noreboot
-
 }
 
 
@@ -255,7 +246,7 @@ locate_device() {
             DEVNUM=$value
             return_val=$(( devbus_status && devnum_status ))
             if [ $return_val ]; then
-              echo >&2 "Info:  Found device $device, DEVBUS=${DEVBUS}, DEVNUM=${DEVNUM}"
+              echo >&2 "Info: Found device $device, DEVBUS=${DEVBUS}, DEVNUM=${DEVNUM}"
             fi
           fi
         fi
@@ -274,42 +265,6 @@ gen_device_id() {
   echo "usb-${vendor}-${product}-${serial}"
 }
 
-#
-#   Given an index in $1, read the vendor id, product id, and serial number
-#   from the definition file usbHostDev structure.  Call locate_device
-#   to set the DEVNUM and DEVBUS variables.  Finally set the DEVID index key.
-# 
-read_device_config() {
-  local dev_index="$1"
-
-  local return_val=0
-  declare -A device
-
-  local device_params=$(yq e ".usbHostDev[$dev_index] | to_entries[] | .key + \"=\" + .value" $cfn_vm_def)
-  if [ $? -ne 0 ] || [ -z "$device_params" ]; then
-    echo >&2 "Error: Failed to read usbHostDev list in config"
-    return 1
-  fi
-
-  local key; local value
-  while IFS="=" read -r key value; do
-    #echo "${dev_index}: ${key}=${value}"
-    device[${key}]=$value
-  done <<< "${device_params}"
-
-  if ! locate_device ${device[vendor]} ${device[product]} ${device[serial]}; then
-    return_val=1
-    echo >&2 "Warning:  Could not locate device -> name: ${device[name]}"
-  fi
-  #locate_device() set DEVBUS and DEVNUM variables.  Also set a unique DEVID key value
-  #  that is later used for indexing the metadata storage.
-  #DEVID="usb-${device[vendor]}-${device[product]}-${device[serial]}"
-  DEVID=$(gen_device_id "${device[vendor]}" "${device[product]}" "${device[serial]}")
-
-  unset device
-  return $return_val
-}
-
 
 #
 # Returns true(0) if the domain is running, false(1) if stopped, and false(2) on error
@@ -323,10 +278,10 @@ domain_running() {
   fi
 
   if [ "$domain_status" == "running" ]; then
-    echo >&2 "Info: Domain is running for ${cfn_vm_name}"
+    #echo >&2 "Info: Domain is running for ${cfn_vm_name}"
     return 0
-  else
-    echo >&2 "Info: Domain is not running for ${cfn_vm_name}"
+  #else
+    #echo >&2 "Info: Domain is not running for ${cfn_vm_name}"
   fi
 
   return 1
@@ -503,7 +458,7 @@ EOF
 #   - If entry not already "visited"; then call detach-device and remove metadata
 #
 metadata_clean_devices() {
-  # function parameters are a list of visited device ids
+  # function parameters are a space separated list of visited device ids
 
   local return_val=0
 
@@ -542,30 +497,30 @@ metadata_clean_devices() {
         local domain_device=$(yq -p=xml  ".usbdev.usb |= ([] + .) | .usbdev.usb[$dev_index] | .+@id + \" \" + .+@bus + \" \" + .+@device" <<< $domain_metadata)
         #echo "domain_device='${domain_device}'"
         #   usb-0403_6001_FTF50XXM 002 036
-        local devid; local devbus; local devnum
-        read -r devid devbus devnum <<< ${domain_device//\"/}  #remove quotes from items
-        #echo "Parsed:  id=$devid bus=$devbus device=$devnum"
+        local device_id; local devbus; local devnum
+        read -r device_id devbus devnum <<< ${domain_device//\"/}  #remove quotes from items
+        #echo "Parsed:  id=$device_id bus=$devbus device=$devnum"
 
         #If found
-        if [[ -v visited_devices["${devid}"] ]]; then
+        if [[ -v visited_devices["${device_id}"] ]]; then
           # save the metadata
-          #echo "Device exists in visited_devices; saving: ${devid}"
-          new_metadata+="<usb id='${devid}' bus='${devbus}' device='${devnum}'/>"
+          #echo "Device exists in visited_devices; saving: ${device_id}"
+          new_metadata+="<usb id='${device_id}' bus='${devbus}' device='${devnum}'/>"
         else
-          if [ ! -z "$devid" ]; then
+          if [ ! -z "$device_id" ]; then
             # don't save metadata (i.e. delete from metadata)
             # call virsh detach-device
-            echo >&2 "Info: Device not found in config; detaching from VM: ${devid}"
+            echo >&2 "Info: Device not found in config; detaching from VM: ${device_id}"
 
             local old_device_xml=$(gen_device_xml $devbus $devnum)
             echo >&2 "Info: Running virsh detach-device ${cfn_vm_name} with bus=${devbus} device=${devnum}:"
             #echo $old_device_xml
             virsh --connect ${QEMU_URI} detach-device "${cfn_vm_name}" /dev/stdin --persistent <<< "$old_device_xml"
             if [ $? -ne 0 ]; then
-              echo >&2 "Error: virsh detach-device failed for: ${devid}"
+              echo >&2 "Error: virsh detach-device failed for: ${device_id}"
             fi
           #else
-            #echo "devid is blank!; not saving... no other action taken"
+            #echo "device_id is blank!; not saving... no other action taken"
           fi
         fi
 
@@ -602,19 +557,42 @@ start() {
     echo >&2 "Info: Did not find usbHostDev entries in config: ${cfn_vm_def}"
   else
     local dev_index
+    local udev_rules=""
     while IFS= read -r dev_index; do
       # Query current bus/dev attachment for configured device
-      if read_device_config $dev_index; then
-        # read_device_config sets $DEVNUM, $DEVBUS, and $DEVID of the currently attached device
+      local skip_device=0
+      declare -A device
+
+      local device_params=$(yq e ".usbHostDev[$dev_index] | to_entries[] | .key + \"=\" + .value" $cfn_vm_def)
+      if [ $? -ne 0 ] || [ -z "$device_params" ]; then
+        echo >&2 "Error: Failed to read usbHostDev list in config"
+        skip_device=1
+      else
+
+        local key; local value
+        while IFS="=" read -r key value; do
+          #echo "${dev_index}: ${key}=${value}"
+          device[${key}]=$value
+        done <<< "${device_params}"
+
+        #locate_device() sets DEVBUS and DEVNUM variables
+        if ! locate_device ${device[vendor]} ${device[product]} ${device[serial]}; then
+          skip_device=1
+          echo >&2 "Warning:  Could not locate device -> name: ${device[name]}"
+        fi
+      fi
+
+      if [ $skip_device -eq 0 ]; then
+        local device_id=$(gen_device_id "${device[vendor]}" "${device[product]}" "${device[serial]}")
         local new_DEVNUM=$DEVNUM; local new_DEVBUS=$DEVBUS
 
-        #TODO - if $DEVNUM eq $new_DEVNUM and $DEVBUS eq $new_DEVBUS, skip the detach/attach cycle
+        # TODO - if $DEVNUM eq $new_DEVNUM and $DEVBUS eq $new_DEVBUS, skip the detach/attach cycle
 
         # Call metadata_remove_device usb-vendor-product-serial to remove from metadata and return old bus/dev
         # sets $DEVNUM and $DEVBUS of the old attached device; unset if device not found
-        metadata_remove_device $DEVID
+        metadata_remove_device $device_id
         if [ $? ]; then
-          visited_devices+="${DEVID} "
+          visited_devices+="${device_id} "
         fi
 
         #if dev is in metadata; Call virsh detach-device --persistent with old bus/dev to detach device
@@ -624,7 +602,7 @@ start() {
           #echo $old_device_xml
           virsh --connect ${QEMU_URI} detach-device "${cfn_vm_name}" /dev/stdin --persistent <<< "$old_device_xml"
           if [ $? -ne 0 ]; then
-            echo >&2 "Error: virsh detach-device failed for: ${DEVID}"
+            echo >&2 "Error: virsh detach-device failed for: ${device_id}"
           fi
         fi
 
@@ -634,42 +612,47 @@ start() {
         #echo $new_device_xml
         virsh --connect ${QEMU_URI} attach-device "${cfn_vm_name}" /dev/stdin --persistent <<< "$new_device_xml"
         if [ $? -ne 0 ]; then
-          echo >&2 "Error: virsh attach-device failed for: ${DEVID}"
+          echo >&2 "Error: virsh attach-device failed for: ${device_id}"
         fi
 
-        metadata_add_device $DEVID $new_DEVBUS $new_DEVNUM
+        metadata_add_device $device_id $new_DEVBUS $new_DEVNUM
+
+        # Create udev rule for the USB host device hot-plug event
+        udev_rules+='ACTION=="add", SUBSYSTEM=="usb", DRIVER=="usb", '
+        udev_rules+="ATTRS{idVendor}==\"${device[vendor]}\", "
+        udev_rules+="ATTRS{idProduct}==\"${device[product]}\", "
+        udev_rules+="ATTRS{serial}==\"${device[serial]}\", "
+        udev_rules+='PROGRAM="/usr/bin/systemd-escape -p --template=virt-compose-example_vm1@.service $env{DEVNAME}", '
+        udev_rules+='TAG+="systemd", ENV{SYSTEMD_WANTS}+="%c"'
+        udev_rules+=$'\n'
 
       else
         echo >&2 "Warning:  Continuing without device"
       fi
 
-      unset DEVID
       unset DEVNUM
       unset DEVBUS
+      unset device
 
     done <<< "$usb_host_dev"
   fi
 
+  #echo "udev_rules="$'\n'"$udev_rules"
+  local udev_file="${UDEV_RULES_FOLDER}/90-virt-compose-${cfn_vm_name}.rules"
+  echo >&2 "Info: Creating udev rules file: ${udev_file}"
+  if [ ! -z "$udev_rules" ]; then
+    cat << EOF | sudo tee ${udev_file} >> /dev/null
+$udev_rules
+EOF
 
-
-  # TODO- Create udev rules for each USB host device hot-plug event
-  # This is going to need some surgery because vendor, product, and serial are not exposed here yet
-
-# ${UDEV_RULES_FOLDER}  ${cfn_vm_name}
-# cat << 'EOF' | sudo tee /etc/udev/rules.d/90-virt-compose-example_vm1.rules
-# ACTION=="add", SUBSYSTEM=="usb", DRIVER=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="FTDPY3VD", TAG+="systemd", PROGRAM="/usr/bin/systemd-escape -p --template=virt-compose-example_vm1@.service $env{DEVNAME}", ENV{SYSTEMD_WANTS}+="%c"
-# EOF
-# sudo udevadm control --reload-rules
-
-
-
-
+    sudo udevadm control --reload-rules
+  fi
 
   # Loop trough all devices in the metadata and remove any that were not in "visited"
-  #   "visited" means in the VM configuration and presently plugged in
+  #   "visited" means the VM configuration exists and the device is present
   metadata_clean_devices $visited_devices  #intentionally left off "" to pass as a list of cmd parms
 
-  # Call virsh start
+  # Damn...  finally, call virsh start
   virsh --connect ${QEMU_URI} start ${cfn_vm_name}
   if [ $? -ne 0 ]; then
     echo >&2 "Error: Failed to start ${cfn_vm_name}"
@@ -697,7 +680,8 @@ shutdown() {
 
   # Remove udev rules for USB host device hot-plug events
   local udev_file="${UDEV_RULES_FOLDER}/90-virt-compose-${cfn_vm_name}.rules"
-  rm $udev_file
+  echo >&2 "Info: Removing udev rules file: ${udev_file}"
+  sudo rm $udev_file
   if [ $? -ne 0 ]; then
     echo >&2 "Error: Failed to remove ${udev_file}"
   fi
@@ -758,17 +742,17 @@ attach_device() {
 
     # Use $cfn_vm_name to remove the old device mapping matching vendor,
     #   product, serial from the vm metadata
-    local DEVID=$(gen_device_id "${device[ID_VENDOR_ID]}" "${device[ID_MODEL_ID]}" "${device[ID_SERIAL_SHORT]}")
+    local device_id=$(gen_device_id "${device[ID_VENDOR_ID]}" "${device[ID_MODEL_ID]}" "${device[ID_SERIAL_SHORT]}")
     # Call metadata_remove_device usb-vendor-product-serial to remove from metadata and return old bus/dev
     # sets $DEVNUM and $DEVBUS of the old attached device; unset if device not found
-    metadata_remove_device "${DEVID}"
+    metadata_remove_device "${device_id}"
     if [ ! -z "$DEVNUM" ]; then
       local old_device_xml=$(gen_device_xml $DEVBUS $DEVNUM)
       echo >&2 "Info: Running virsh detach-device ${cfn_vm_name} with bus=${DEVBUS} device=${DEVNUM}:"
       #echo $old_device_xml
       virsh --connect ${QEMU_URI} detach-device "${cfn_vm_name}" /dev/stdin --persistent <<< "$old_device_xml"
       if [ $? -ne 0 ]; then
-        echo >&2 "Error: virsh detach-device failed for: ${DEVID}"
+        echo >&2 "Error: virsh detach-device failed for: ${device_id}"
       fi
 
     fi
@@ -779,11 +763,11 @@ attach_device() {
     #echo $new_device_xml
     virsh --connect ${QEMU_URI} attach-device "${cfn_vm_name}" /dev/stdin --persistent <<< "$new_device_xml"
     if [ $? -ne 0 ]; then
-      echo >&2 "Error: virsh attach-device failed for: ${DEVID}"
+      echo >&2 "Error: virsh attach-device failed for: ${device_id}"
     fi
 
     # Add new device mapping to metadata
-    metadata_add_device $DEVID ${device[BUSNUM]} ${device[DEVNUM]}
+    metadata_add_device $device_id ${device[BUSNUM]} ${device[DEVNUM]}
 
   fi
 
@@ -821,17 +805,17 @@ detach_device() {
 
     # Use $cfn_vm_name to remove the old device mapping matching vendor,
     #   product, serial from the vm metadata
-    local DEVID=$(gen_device_id "${device[ID_VENDOR_ID]}" "${device[ID_MODEL_ID]}" "${device[ID_SERIAL_SHORT]}")
+    local device_id=$(gen_device_id "${device[ID_VENDOR_ID]}" "${device[ID_MODEL_ID]}" "${device[ID_SERIAL_SHORT]}")
     # Call metadata_remove_device usb-vendor-product-serial to remove from metadata and return old bus/dev
     # sets $DEVNUM and $DEVBUS of the old attached device; unset if device not found
-    metadata_remove_device "${DEVID}"
+    metadata_remove_device "${device_id}"
     if [ ! -z "$DEVNUM" ]; then
       local old_device_xml=$(gen_device_xml "${device[BUSNUM]}" "${device[DEVNUM]}")
       echo >&2 "Info: Running virsh detach-device ${cfn_vm_name} with bus=${device[BUSNUM]} device=${device[DEVNUM]}:"
       #echo $old_device_xml
       virsh --connect ${QEMU_URI} detach-device "${cfn_vm_name}" /dev/stdin --persistent <<< "$old_device_xml"
       if [ $? -ne 0 ]; then
-        echo >&2 "Error: virsh detach-device failed for: ${DEVID}"
+        echo >&2 "Error: virsh detach-device failed for: ${device_id}"
       fi
 
     fi
@@ -849,7 +833,8 @@ undefine() {
 
   # Remove systemd service for USB host device hot-plug events
   local systemd_file="${SYSTEMD_FOLDER}/virt-compose-${cfn_vm_name}@.service"
-  rm $systemd_file
+  echo >&2 "Info: Removing systemd service: ${systemd_file}"
+  sudo rm $systemd_file
   if [ $? -ne 0 ]; then
     echo >&2 "Error: Failed to remove ${systemd_file}"
   fi
@@ -874,22 +859,28 @@ undefine() {
     return 1
   fi
 
-  # # Confirm that image folder exists and isn't root before trying to delete it
-  # if [ -z "${cfn_vm_name}" ] || [ -z "${VOLUME_PATH}" ]; then
-  #   echo >&2 "Error: vm name is not defined; not deleting image folder"
-  #   return 1
-  # fi
-  # if [ ! -d "${VOLUME_PATH}/${cfn_vm_name}" ]; then
-  #   echo >&2 "Error: Image folder does not exist: ${VOLUME_PATH}/${cfn_vm_name}"
-  #   return 1
-  # fi
+  # Confirm that image folder exists and isn't root before trying to delete it
+  local boot_path="${VOLUME_PATH}/${cfn_vm_name}"
+  if [ -z "${VOLUME_PATH}" ]; then
+    echo >&2 "Error: VOLUME_PATH is not defined; not deleting image folder"
+    return 1
+  fi
+  if [ -z "${cfn_vm_name}" ]; then
+    echo >&2 "Error: vm name is not defined; not deleting image folder"
+    return 1
+  fi
+  if [ ! -d "${boot_path}" ]; then
+    echo >&2 "Error: Image folder does not exist: ${boot_path}"
+    return 1
+  fi
 
-  # # remove the install files
-  # sudo rm -rf ${VOLUME_PATH}/${cfn_vm_name}
-  # if [ $? -ne 0 ]; then
-  #   echo >&2 "Error: Failed to remove image folder: ${VOLUME_PATH}/${cfn_vm_name}"
-  #   return 1
-  # fi
+  # remove the install files
+  echo >&2 "Info: Removing VM boot volume: ${boot_path}"
+  sudo rm -rf ${boot_path}
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to remove image folder: ${boot_path}"
+    return 1
+  fi
 
   return 0
 
@@ -897,7 +888,7 @@ undefine() {
 
 
 #
-# Reads GLOBAL section from virt-compose.yaml and exports the map of variables
+# Reads GLOBAL section from ${cfn_config_file} and exports the map of variables
 #
 read_config() {
   echo >&2 "Info: Reading config file: ${cfn_config_file}"
@@ -923,10 +914,14 @@ usage() {
 
   Usage: $progname [-h|--help] [-c|--config] {action} [-a|--all] [vm-name] [device-path]
 
+  $progname is a script that mirrors lifecycle aspects of virsh and virt-install commands
+  reading necessary inputs from a simple VM definition file in YAML.  It also dynamically
+  manages USB host device passthrough with udev/systemd.
+
   Optional arguments:
     -h, --help          Show this help message and exit
     -c, --config        Specify full config file path
-                          (default: /etc/virt-compose/virt-compose.yaml)
+                          (default: ${BASE_FOLDER}/${CONFIG})
     -a, --all           Used with start and shutdown
     [vm-name]           Unique name of the KVM VM
     [device-path]       Specifies the device path for use with attach/detach
@@ -960,8 +955,8 @@ done
 cfn_config_file=${BASE_FOLDER}/${CONFIG}
 cfn_all=false
 progname=$(basename $0)
-OPTIONS=hc:b:a
-LONGOPTS=help,config:,base:,all
+OPTIONS=hc:a
+LONGOPTS=help,config:,all
 PARSED=$(getopt --options=$OPTIONS --longoptions=$LONGOPTS --name "$progname" -- "$@")
 if [ $? != 0 ] ; then usage; exit 1 ; fi
 eval set -- "$PARSED"
