@@ -15,16 +15,6 @@
 #  limitations under the License.
 
 
-# To Do
-#  [ ] Create installer
-#  [ ] Script to install kvm packages (dependencies of installer?)
-#  [ ] Script to build out networks from nets/* or just use virsh?
-#  [ ] Create Repository
-#     ** virt-compose.sh, virt-compose.conf
-#     ** vm/example_vm/example_vm.yaml
-#     ** vm/example_vm/cloud-init/meta-data
-#     ** vm/example_vm/cloud-init/user-data
-#     ** nets/example_net.yaml
 #  * Out of box user experience
 #     ** clone repository
 #     ** run installer, install packages
@@ -34,16 +24,28 @@
 #     ** run virt-compose stop example_vm
 #     ** run virt-compose undefine example_vm
 
-#  [X] Create install
+# To Do
+#  [ ] Rename virt-compose.sh to just virt-compose
+#  [ ] Create installer
+#       • Create /etc/virt-compose
+#       • Install ./virt-compose.yaml /etc/virt-compose/virt-compose.yaml
+#       • Install ./vm/* /etc/virt-compose/vm
+#       • Install ./virt-compose /usr/bin
+#
+#  [ ] Script to install kvm packages (dependencies of installer?)
+#  [ ] Script to build out networks from nets/* or just use virsh?
+#  [X] Create Repository
+
+#  [X] Code install
 #  [ ]  ** Update install to create udev links
-#  [X] Create undefine
+#  [X] Code undefine
 #  [ ]  ** Update undefine to remove udev links
-#  [ ] Create attach-device
-#  [ ] Create detach-device
-#  [x] Create start
-#  [ ] Create start-all
-#  [x] Create shutdown
-#  [ ] Create shutdown-all
+#  [X] Code attach-device
+#  [X] Code detach-device
+#  [x] Code start
+#  [ ] Code start-all
+#  [x] Code shutdown
+#  [ ] Code shutdown-all
 #  [x] Test with multiple identical devices
 #  [ ]  ** Test all use cases
 
@@ -147,18 +149,6 @@ install() {
   fi
   popd > /dev/null
 
-  # XXX- Create udev rules for each USB host device hot-plug event
-
-
-
-
-
-
-
-
-
-
-
   # Array that will hold all the command line options for virt-install
   cfn_vm_parms=()
 
@@ -200,6 +190,23 @@ install() {
     echo >&2 "Error: virt-installed failed"
     return 1
   fi
+
+  # Create systemd service for USB host device hot-plug events
+  #   NOTE:  vm name can not contain hyphen or systemd %j breaks
+  cat << 'EOF' | sudo tee ${SYSTEMD_FOLDER}/virt-compose-${cfn_vm_name}@.service >> /dev/null
+[Unit]
+Description=virt-compose: Manage device hot-plug event for %j@/%I
+
+[Service]
+Type=oneshot
+SyslogIdentifier=%N
+ExecStart=/bin/echo "Received vm: %j - device: /%I"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  sudo systemctl daemon-reload
 
   return 0
 
@@ -601,7 +608,7 @@ start() {
         # read_device_config sets $DEVNUM, $DEVBUS, and $DEVID of the currently attached device
         local new_DEVNUM=$DEVNUM; local new_DEVBUS=$DEVBUS
 
-        #XXX - if $DEVNUM eq $new_DEVNUM and $DEVBUS eq $new_DEVBUS, skip the detach/attach cycle
+        #TODO - if $DEVNUM eq $new_DEVNUM and $DEVBUS eq $new_DEVBUS, skip the detach/attach cycle
 
         # Call metadata_remove_device usb-vendor-product-serial to remove from metadata and return old bus/dev
         # sets $DEVNUM and $DEVBUS of the old attached device; unset if device not found
@@ -643,6 +650,21 @@ start() {
     done <<< "$usb_host_dev"
   fi
 
+
+
+  # TODO- Create udev rules for each USB host device hot-plug event
+  # This is going to need some surgery because vendor, product, and serial are not exposed here yet
+
+# ${UDEV_RULES_FOLDER}  ${cfn_vm_name}
+# cat << 'EOF' | sudo tee /etc/udev/rules.d/90-virt-compose-example_vm1.rules
+# ACTION=="add", SUBSYSTEM=="usb", DRIVER=="usb", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", ATTRS{serial}=="FTDPY3VD", TAG+="systemd", PROGRAM="/usr/bin/systemd-escape -p --template=virt-compose-example_vm1@.service $env{DEVNAME}", ENV{SYSTEMD_WANTS}+="%c"
+# EOF
+# sudo udevadm control --reload-rules
+
+
+
+
+
   # Loop trough all devices in the metadata and remove any that were not in "visited"
   #   "visited" means in the VM configuration and presently plugged in
   metadata_clean_devices $visited_devices  #intentionally left off "" to pass as a list of cmd parms
@@ -658,7 +680,7 @@ start() {
 }
 
 #
-# XXX - Need to implement for host start/stop
+# TODO - Need to implement for host start/stop
 #
 start_all() {
   echo >&2 "Info: start all:  using VM definition: ${cfn_vm_def}"
@@ -673,6 +695,18 @@ start_all() {
 shutdown() {
   echo >&2 "Info: shutdown:  using VM definition: ${cfn_vm_def}"
 
+  # Remove udev rules for USB host device hot-plug events
+  local udev_file="${UDEV_RULES_FOLDER}/90-virt-compose-${cfn_vm_name}.rules"
+  rm $udev_file
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to remove ${udev_file}"
+  fi
+
+  sudo udevadm control --reload-rules
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to reload udev rules"
+  fi
+
   virsh --connect ${QEMU_URI} shutdown ${cfn_vm_name}
   if [ $? -ne 0 ]; then
     echo >&2 "Error: Failed to shutdown ${cfn_vm_name}"
@@ -682,7 +716,7 @@ shutdown() {
 }
 
 #
-# XXX - Need to implement for host start/stop
+# TODO - Need to implement for host start/stop
 #
 shutdown_all() {
   echo >&2 "Info: shutdown all:  using VM definition: ${cfn_vm_def}"
@@ -813,12 +847,17 @@ detach_device() {
 undefine() {
   echo >&2 "Info: uninstall:  using VM definition: ${cfn_vm_def}"
 
-  # XXX- remove udev rules for each USB host device
+  # Remove systemd service for USB host device hot-plug events
+  local systemd_file="${SYSTEMD_FOLDER}/virt-compose-${cfn_vm_name}@.service"
+  rm $systemd_file
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to remove ${systemd_file}"
+  fi
 
-
-
-
-
+  sudo systemctl daemon-reload
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to reload systemd after removing service"
+  fi
 
   # virsh destroy - Hard immediate power off
   virsh --connect ${QEMU_URI} destroy ${cfn_vm_name} > /dev/null 2>&1
@@ -908,16 +947,15 @@ HEREDOC
 # main()
 #
 
-# TODO: check that all required commands are present
-# command -v aws >/dev/null 2>&1 || { echo >&2 "ERROR: Please install the aws cli command"; exit 1; }
-#   sudo
-#   yq
-#   udevadm
-#   qemu-img
-#   xorrisofs
-#   virsh
-#   virt-install
-#   virt-xml
+commands=("cat" "tee" "sudo" "yq" "udevadm" "systemctl" "qemu-img" "xorrisofs" "virsh" "virt-install")
+command_check=0
+for command in "${commands[@]}"; do
+  if ! command -v "$command" >/dev/null 2>&1; then
+    echo >&2 "ERROR: Please install the $command command"
+    command_check=1
+  fi
+done
+[ $command_check -eq 0 ] || exit 1
 
 cfn_config_file=${BASE_FOLDER}/${CONFIG}
 cfn_all=false

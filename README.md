@@ -106,16 +106,11 @@ Actions read VM configuration from: `/etc/virt-compose/vm/{vm_name}/{vm_name}.ya
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-### `script_name.sh`
+### `virt-compose`
    ```
   Paste the usage section here from the actual script
   ```
 
-### List out each step to accomplish some uses
-Describe the step here
-   ```sh
-   some linux commands
-   ```
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -123,8 +118,9 @@ Describe the step here
 <!-- ROADMAP -->
 ## Roadmap
 
-- [x] Some completed thing
-- [ ] Something that still needs to be done
+- [x] Add vm management commands for VM lifecycle statages
+- [x] Add usb device mount support
+- [ ] Add "net" subcommands to build networks from ./nets definitions
 
 See the [open issues](https://github.com/mstovenour/virt-compose/issues) for a list of proposed features (and known issues).
 

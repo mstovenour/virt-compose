@@ -5,3 +5,5 @@ GLOBAL:
   BASE_FOLDER: .
   VM_FOLDER: vm
   METADATA_FOLDER: cloud-init
+  SYSTEMD_FOLDER: /etc/systemd/system
+  UDEV_RULES_FOLDER: /etc/udev/rules.d
