@@ -33,7 +33,7 @@
 <!-- STATUS -->
 ## Status
 
-This package is still under construction and not complete.  Please do not try to use it yet.  I will create a release tag and change this message once it is functional enough for reliable use.  I accumulated enough functionality that I needed to backup my local copy and so created this initial repository for that purpose.
+This package is still under construction.  It should be functional enough to use but still needs some sanity check logic.  I will create a release tag and change this message once it is feature coplete.
 
 <!-- OVERVIEW -->
 ## Overview
@@ -52,15 +52,16 @@ Actions read VM configuration from: `/etc/virt-compose/vm/{vm_name}/{vm_name}.ya
   * `install {vm_name}`
     - Calls: `virt-install`
     - This command will do all the things necessary to define the VM but does not start the VM.  There is more than you think (e.g. prepping the boot device, creating the cloud-init CDROM image, etc.)
-    - Creates the udev rules for a listed USB host device hot-plug event
+    - Creates the systemd service called by udev on USB host device hot-plug event
   * `start [-a|--all] [vm_name]`
     - Calls: `virsh attach-device`, `virsh start`
     - Wraps the virsh attach-device command, locating the IDs, creating the necessary XML file, etc.
     - Wraps the virsh start command
+    - Creates the udev rules for each defined USB host device hot-plug event
   * `shutdown [-a|--all] [vm_name]`
     - Calls: `virsh shutdown`, `virsh detach-device`
     - Wraps the virsh shutdown command
-    - Wraps the virsh detach-device command, locating the IDs, creating the necessary XML file, etc.
+    - Deletes the udev rules for each defined USB host device hot-plug event
   * `attach-device {vm_name} {$devpath}`
     - Calls: `virsh attach-device`
     - Wraps the virsh attach-device command, locating the IDs, creating the necessary XML file, etc.
@@ -68,10 +69,9 @@ Actions read VM configuration from: `/etc/virt-compose/vm/{vm_name}/{vm_name}.ya
   * `detach-device {vm_name} {$devpath}`
     - Calls: `virsh detach-device`
     - Wraps the virsh detach-device command, locating the IDs, creating the necessary XML file, etc.
-    - Called by systemd when udev fires events for a USB host device hot-plug event
   * `undefine {vm_name}`
     - Calls: `virsh undefine`
-    - Removes udev rules for a listed USB host device hot-plug event
+    - Deletes the systemd service called by udev on USB host device hot-plug event
     - Will not allow undefine on VMs that are not shutdown first as a safety interlock
 ### Systemd Services
   * `virt-compose.service`
@@ -79,8 +79,8 @@ Actions read VM configuration from: `/etc/virt-compose/vm/{vm_name}/{vm_name}.ya
     On host shutdown, stops all services, if the service is running
     Calls `virt-compose [start|shutdown] --all`
   * `virt-compose-{vm_name}@.service`
-    Triggers attach / detach device when udev rules detect monitored devices
-    Calls `virt-compose [attach-device | detach-device] {$VM} {$devpath}`
+    Triggers attach USB host device when udev rules detect monitored devices
+    Calls `virt-compose attach-device {$VM} {$devpath}`
 
 <!-- GETTING STARTED -->
 ## Getting Started
@@ -119,7 +119,7 @@ Actions read VM configuration from: `/etc/virt-compose/vm/{vm_name}/{vm_name}.ya
 ## Roadmap
 
 - [x] Add vm management commands for VM lifecycle statages
-- [x] Add usb device mount support
+- [x] Add usb device attach/detach support
 - [ ] Add "net" subcommands to build networks from ./nets definitions
 
 See the [open issues](https://github.com/mstovenour/virt-compose/issues) for a list of proposed features (and known issues).
@@ -136,11 +136,13 @@ If you have a suggestion that would make this better, please fork the repo and c
 
 Don't forget to give the project a star! Thanks again!
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+1. Fork the Project on Github
+1. Create a clone on your workspace (`git clone https://github.com/{your-user-name}/virt-compose.git`)
+1. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+1. Code away and don't forget to TEST
+1. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+1. Push the Branch to your Github repository (`git push origin feature/AmazingFeature`)
+1. Open a Pull Request in Github
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
@@ -181,5 +183,6 @@ Project Link: [https://github.com/mstovenour/virt-compose](https://github.com/ms
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
+This README.md is based on https://github.com/othneildrew/Best-README-Template
 
 <p align="right">(<a href="#top">back to top</a>)</p>

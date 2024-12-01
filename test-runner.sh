@@ -23,6 +23,16 @@ test_domain_running() {
 
   echo "Calling domain_running() for $cfn_vm_name"
   domain_running
+  local ret_val=$?
+  if [ $ret_val -eq 0 ]; then
+    echo "domain is running"
+  elif [ $ret_val -eq 1 ]; then
+    echo "domain is shutdown"
+  elif [ $ret_val -eq 2 ]; then
+    echo "domain is undefined"
+  else
+    echo "undefined return value"
+  fi
 
 }
 
@@ -117,9 +127,9 @@ test_metadata() {
 }
 
 
-source ./virt-compose.sh -c ./virt-compose.yaml test example_vm1
+source ./virt-compose.sh -c ./virt-compose-test.yaml test $1
 # test_metadata
 # test_read_device_config
 # test_metadata_clean_devices
-#test_domain_running
-test_metadata_write
+test_domain_running
+#test_metadata_write

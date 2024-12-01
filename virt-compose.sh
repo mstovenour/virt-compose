@@ -21,12 +21,12 @@
 #     ** run nets builder for example_net
 #     ** run virt-compose install example_vm
 #     ** run virt-compose start example_vm
-#     ** run virt-compose stop example_vm
+#     ** run virt-compose shutdown example_vm
 #     ** run virt-compose undefine example_vm
 
 # To Do
-#  [ ] Rename virt-compose.sh to just virt-compose
-#  [ ] Create installer
+#  [X] Rename virt-compose.sh to just virt-compose
+#  [X] Create installer
 #       • Create /etc/virt-compose
 #       • Install ./virt-compose.yaml /etc/virt-compose/virt-compose.yaml
 #       • Install ./vm/* /etc/virt-compose/vm
@@ -49,13 +49,13 @@
 #  [X]  ** Update to remove udev links
 #  [ ] Code shutdown-all
 
-#  [ ] Fix: Start needs to check if VM is running and refuse to start
+#  [X] Fix: Ensure domain state is correct before operation
 #         Otherwise metadata and <hostdev> entries can get out of sync!
 #       • Ensure domain doesn't exist before calling "install"
 #       • Check if domain exists and is stopped before calling "start"
 #       • Check if domain exists and is running before calling "shutdown"
-#       • Check if domain exists and is stopped before calling "undefine"
-#  [ ] Fix: Need to ensure VM name never contains a hyphen
+#       • Check if domain exists before calling "undefine"
+#  [X] Fix: Need to ensure VM name never contains a hyphen
 #         Otherwise systemd service name parsing will fail
 
 
@@ -81,10 +81,18 @@
 
 
 #
-# Define libvert VM but don't start it and add udev hooks
+# Install libvert VM and add udev hooks but don't start it
 #
 install() {
   echo >&2 "Info: install:  using VM definition: ${cfn_vm_def}"
+
+  # Ensure domain does not exist; status should return error
+  domain_running
+  local ret_val=$?
+  if [ $ret_val -lt 2 ]; then
+    echo >&2 "Error: VM ${cfn_vm_name} is already installed, not installing."
+    return 1
+  fi
 
   # Retrieve the bootDisk variables
   cfn_image_path=$(yq e '.bootDisk.imageLocation' $cfn_vm_def)
@@ -270,13 +278,13 @@ gen_device_id() {
 
 
 #
-# Returns true(0) if the domain is running, false(1) if stopped, and false(2) on error
+# Returns true(0) if the domain is running, false(1) if shutdown, and false(2) on error
 #
 domain_running() {
 
   local domain_status=$(virsh --connect ${QEMU_URI} domstate ${cfn_vm_name} 2> /dev/null)
   if [ $? -ne 0 ] || [ -z "${domain_status}" ]; then
-    echo >&2 "Error: Failed to get domain status for ${cfn_vm_name}"
+    # echo >&2 "Error: Failed to get domain status for ${cfn_vm_name}"
     return 2
   fi
 
@@ -292,7 +300,7 @@ domain_running() {
 
 
 #
-# Writes metadata to --config if domain is stopped and both --live and --config otherwise
+# Writes metadata to --config if domain is shutdown and both --live and --config otherwise
 #
 metadata_write() {
   local new_metadata=$1
@@ -551,6 +559,17 @@ metadata_clean_devices() {
 start() {
   echo >&2 "Info: start:  using VM definition: ${cfn_vm_def}"
 
+  # Ensure domain exists but is not running
+  domain_running
+  local ret_val=$?
+  if [ $ret_val -eq 0 ]; then
+    echo >&2 "Error: VM ${cfn_vm_name} is already started."
+    return 1
+  elif [ $ret_val -gt 1 ]; then
+    echo >&2 "Error: VM ${cfn_vm_name} is not installed, use install first."
+    return 1
+  fi
+
   local visited_devices=""
 
   # Loop through usbHostDev, if it exists, attaching the usb devices
@@ -682,6 +701,17 @@ start_all() {
 shutdown() {
   echo >&2 "Info: shutdown:  using VM definition: ${cfn_vm_def}"
 
+  # Ensure domain exists and is running
+  domain_running
+  local ret_val=$?
+  if [ $ret_val -eq 1 ]; then
+    echo >&2 "Error: VM ${cfn_vm_name} is already shutdown."
+    return 1
+  elif [ $ret_val -gt 1 ]; then
+    echo >&2 "Error: VM ${cfn_vm_name} is not installed."
+    return 1
+  fi
+
   # Remove udev rules for USB host device hot-plug events
   local udev_file="${UDEV_RULES_FOLDER}/90-virt-compose-${cfn_vm_name}.rules"
   echo >&2 "Info: Removing udev rules file: ${udev_file}"
@@ -723,9 +753,13 @@ shutdown_all() {
 attach_device() {
   echo >&2 "Info: attach-device device: ${cfn_device_path}"
 
-  #Inputs:
-  # - $cfn_device_path
-  # - $cfn_vm_name
+  # Ensure domain exists
+  domain_running
+  local ret_val=$?
+  if [ $ret_val -gt 1 ]; then
+    echo >&2 "Error: VM ${cfn_vm_name} is not installed."
+    return 1
+  fi
 
   local return_val=0
 
@@ -788,9 +822,13 @@ attach_device() {
 detach_device() {
   echo >&2 "Info: detach-device device: ${cfn_device_path}"
 
-  #Inputs:
-  # - $cfn_device_path
-  # - $cfn_vm_name
+  # Ensure domain exists
+  domain_running
+  local ret_val=$?
+  if [ $ret_val -gt 1 ]; then
+    echo >&2 "Error: VM ${cfn_vm_name} is not installed."
+    return 1
+  fi
 
   local return_val=0
 
@@ -838,6 +876,14 @@ detach_device() {
 #
 undefine() {
   echo >&2 "Info: uninstall:  using VM definition: ${cfn_vm_def}"
+
+  # Ensure domain exists
+  domain_running
+  local ret_val=$?
+  if [ $ret_val -gt 1 ]; then
+    echo >&2 "Error: VM ${cfn_vm_name} is not installed."
+    return 1
+  fi
 
   # Remove systemd service for USB host device hot-plug events
   local systemd_file="${SYSTEMD_FOLDER}/virt-compose-${cfn_vm_name}@.service"
@@ -993,6 +1039,10 @@ if ! read_config; then exit 1; fi
 
 # Check for presense of VM folder and config file
 cfn_vm_name=${2:-''}
+if [[ "$cfn_vm_name" =~ "-" ]]; then
+  echo >&2 "Error: VM name, ${cfn_vm_name}, must not contain a hyphen (-) due to systemd service parsing."
+  exit 1;
+fi
 cfn_vm_folder="${BASE_FOLDER}/${VM_FOLDER}/${cfn_vm_name}"
 cfn_vm_def="${cfn_vm_folder}/${cfn_vm_name}.yaml"
 if [ ! -z "$cfn_vm_name" ]; then
