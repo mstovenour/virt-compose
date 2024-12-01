@@ -33,7 +33,7 @@
 <!-- STATUS -->
 ## Status
 
-This package is still under construction.  It should be functional enough to use but still needs some sanity check logic.  I will create a release tag and change this message once it is feature coplete.
+This package is still under construction.  It should be functional enough to use but it has only been tested with a single vm usecase.  The start_all and stop_all functions have not been implemented yet.  I will create a release tag and change this message once it is feature coplete.
 
 <!-- OVERVIEW -->
 ## Overview
@@ -53,15 +53,19 @@ Actions read VM configuration from: `/etc/virt-compose/vm/{vm_name}/{vm_name}.ya
     - Calls: `virt-install`
     - This command will do all the things necessary to define the VM but does not start the VM.  There is more than you think (e.g. prepping the boot device, creating the cloud-init CDROM image, etc.)
     - Creates the systemd service called by udev on USB host device hot-plug event
-  * `start [-a|--all] [vm_name]`
+  * `start {vm_name}`
     - Calls: `virsh attach-device`, `virsh start`
     - Wraps the virsh attach-device command, locating the IDs, creating the necessary XML file, etc.
     - Wraps the virsh start command
     - Creates the udev rules for each defined USB host device hot-plug event
-  * `shutdown [-a|--all] [vm_name]`
+  * `start-all`
+    - Calls: `start` for each VM definition where autoStart=true
+  * `shutdown {vm_name}`
     - Calls: `virsh shutdown`, `virsh detach-device`
     - Wraps the virsh shutdown command
     - Deletes the udev rules for each defined USB host device hot-plug event
+  * `shutdown-all`
+    - Calls: `shutdown` for every VM definition
   * `attach-device {vm_name} {$devpath}`
     - Calls: `virsh attach-device`
     - Wraps the virsh attach-device command, locating the IDs, creating the necessary XML file, etc.
@@ -108,9 +112,29 @@ Actions read VM configuration from: `/etc/virt-compose/vm/{vm_name}/{vm_name}.ya
 
 ### `virt-compose`
    ```
-  Paste the usage section here from the actual script
-  ```
+  Usage: virt-compose [-h|--help] [-c|--config] {action} [vm_name] [device_path]
 
+  virt-compose is a script that mirrors lifecycle aspects of virsh and virt-install commands
+  reading necessary inputs from a simple VM definition file in YAML.  It also dynamically
+  manages USB host device passthrough with udev/systemd.
+
+  Optional arguments:
+    -h, --help          Show this help message and exit
+    -c, --config        Specify full config file path
+                          (default: /etc/virt-compose/virt-compose.yaml)
+    [vm_name]           Unique name of the KVM VM (no hyphens)
+    [device_path]       Specifies the device path for use with attach/detach
+
+  Required arguments:
+    {action}            install {vm_name}
+                        start {vm_name}
+                        start-all
+                        shutdown {vm_name}
+                        shutdown-all
+                        attach-device {vm_name} {device_path}
+                        detach-device {vm_name} {device_path}
+                        undefine {vm_name}
+  ```
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 

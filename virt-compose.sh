@@ -688,9 +688,9 @@ EOF
 # TODO - Need to implement for host start/stop
 #
 start_all() {
-  echo >&2 "Info: start all:  using VM definition: ${cfn_vm_def}"
+  echo >&2 "Info: start-all:  using VM definition: ${cfn_vm_folder}"
 
-  echo >&2 "Error: start all not implemented yet"
+  echo >&2 "Error: start-all not implemented yet"
 
 }
 
@@ -738,9 +738,9 @@ shutdown() {
 # TODO - Need to implement for host start/stop
 #
 shutdown_all() {
-  echo >&2 "Info: shutdown all:  using VM definition: ${cfn_vm_def}"
+  echo >&2 "Info: shutdown-all:  using VM folder: ${cfn_vm_folder}"
 
-  echo >&2 "Error: shutdown all not implemented yet"
+  echo >&2 "Error: shutdown-all not implemented yet"
 
 }
 
@@ -967,7 +967,7 @@ read_config() {
 usage() {
   cat << HEREDOC
 
-  Usage: $progname [-h|--help] [-c|--config] {action} [-a|--all] [vm-name] [device-path]
+  Usage: $progname [-h|--help] [-c|--config] {action} [vm_name] [device_path]
 
   $progname is a script that mirrors lifecycle aspects of virsh and virt-install commands
   reading necessary inputs from a simple VM definition file in YAML.  It also dynamically
@@ -977,14 +977,15 @@ usage() {
     -h, --help          Show this help message and exit
     -c, --config        Specify full config file path
                           (default: ${BASE_FOLDER}/${CONFIG})
-    -a, --all           Used with start and shutdown
-    [vm-name]           Unique name of the KVM VM
-    [device-path]       Specifies the device path for use with attach/detach
-  
+    [vm_name]           Unique name of the KVM VM (no hyphens)
+    [device_path]       Specifies the device path for use with attach/detach
+
   Required arguments:
     {action}            install {vm_name}
-                        start [-a|--all] [vm_name]
-                        shutdown [-a|--all] [vm_name]
+                        start {vm_name}
+                        start-all
+                        shutdown {vm_name}
+                        shutdown-all
                         attach-device {vm_name} {device_path}
                         detach-device {vm_name} {device_path}
                         undefine {vm_name}
@@ -1008,44 +1009,51 @@ done
 [ $command_check -eq 0 ] || exit 1
 
 cfn_config_file=${BASE_FOLDER}/${CONFIG}
-cfn_all=false
 progname=$(basename $0)
-OPTIONS=hc:a
-LONGOPTS=help,config:,all
+OPTIONS=hc:
+LONGOPTS=help,config:
 PARSED=$(getopt --options=$OPTIONS --longoptions=$LONGOPTS --name "$progname" -- "$@")
 if [ $? != 0 ] ; then usage; exit 1 ; fi
 eval set -- "$PARSED"
 while true; do
     case "$1" in
         -c|--config) cfn_config_file="$2"; shift 2 ;;
-        -a|--all)    cfn_all=true; shift 2 ;;
         -h|--help)   usage; exit 1 ;;
         --) shift;   break ;;
     esac
 done
 
 if [[ $# -gt 3 ]]; then
-    echo >&2 "ERROR: Too many arguments: $@"
-    usage
-    exit 1
+    echo >&2 "ERROR: Too many arguments: $@"; usage; exit 1
+fi
+if [[ $# -gt 2 && ! "$1" =~ ^(attach-device|detach-device)$ ]]; then
+    echo >&2 "ERROR: Too many arguments: $@"; usage; exit 1
+fi
+if [[ $# -gt 1 && "$1" =~ ^(start-all|shutdown-all)$ ]]; then
+    echo >&2 "ERROR: Too many arguments: $@"; usage; exit 1
 fi
 if [[ $# -lt 1 ]]; then
-    echo >&2 "ERROR: action is missing"
-    usage
-    exit 1
+    echo >&2 "ERROR: action is missing"; usage; exit 1
 fi
 
 if ! read_config; then exit 1; fi
 
-# Check for presense of VM folder and config file
 cfn_vm_name=${2:-''}
+# Check for presense of VM name parameter
+if [[ -z "$cfn_vm_name" && ! "$1" =~ ^(start-all|shutdown-all)$ ]]; then
+  echo >&2 "ERROR: vm_name is required."; usage; exit 1
+fi
+# Ensure vm name does not conain a hyphen
 if [[ "$cfn_vm_name" =~ "-" ]]; then
   echo >&2 "Error: VM name, ${cfn_vm_name}, must not contain a hyphen (-) due to systemd service parsing."
   exit 1;
 fi
-cfn_vm_folder="${BASE_FOLDER}/${VM_FOLDER}/${cfn_vm_name}"
-cfn_vm_def="${cfn_vm_folder}/${cfn_vm_name}.yaml"
+# Check for presense of VM folder and config file
+cfn_vm_folder="${BASE_FOLDER}/${VM_FOLDER}"
+cfn_vm_def=""
 if [ ! -z "$cfn_vm_name" ]; then
+  cfn_vm_folder="${BASE_FOLDER}/${VM_FOLDER}/${cfn_vm_name}"
+  cfn_vm_def="${cfn_vm_folder}/${cfn_vm_name}.yaml"
   if [ ! -d "${cfn_vm_folder}" ]; then
     echo >&2 "Error: VM definition directory missing; expected: ${cfn_vm_folder}"; exit 1;
   fi
@@ -1057,42 +1065,34 @@ fi
 
 case "${1:-''}" in
   'test')
-    if [ -z "$cfn_vm_name" ]; then echo >&2 "ERROR: vm_name missing"; usage; exit 1; fi
+    # do nothing
     ;;
   'install')
-    if [ -z "$cfn_vm_name" ]; then echo >&2 "ERROR: vm_name missing"; usage; exit 1; fi
     install
     ;;
   'start')
-    if $cfn_all; then
-      start_all
-    else
-      if [ -z "$cfn_vm_name" ]; then echo >&2 "ERROR: vm_name missing"; usage; exit 1; fi
-      start
-    fi
+    start
+    ;;
+  'start-all')
+    start_all
     ;;
   'shutdown')
-    if $cfn_all; then
-      shutdown_all
-    else
-      if [ -z "$cfn_vm_name" ]; then echo >&2 "ERROR: vm_name missing"; usage; exit 1; fi
-      shutdown
-    fi
+    shutdown
+    ;;
+  'shutdown-all')
+    shutdown_all
     ;;
   'attach-device')
-    if [ -z "$cfn_vm_name" ]; then echo >&2 "ERROR: vm_name missing"; usage; exit 1; fi
     cfn_device_path=${3:-''}
     if [ -z "$cfn_device_path" ]; then echo >&2 "ERROR: device path missing"; usage; exit 1; fi
     attach_device
     ;;
   'detach-device')
-    if [ -z "$cfn_vm_name" ]; then echo >&2 "ERROR: vm_name missing"; usage; exit 1; fi
     cfn_device_path=${3:-''}
     if [ -z "$cfn_device_path" ]; then echo >&2 "ERROR: device path missing"; usage; exit 1; fi
     detach_device
     ;;
   'undefine')
-    if [ -z "$cfn_vm_name" ]; then echo >&2 "ERROR: vm_name missing"; usage; exit 1; fi
     undefine
     ;;
   *) echo >&2 "ERROR: unrecognized action --> $1"; usage; exit 1 ;;
