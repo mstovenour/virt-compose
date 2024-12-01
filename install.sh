@@ -93,8 +93,12 @@ done
 
 if ! read_config; then exit 1; fi
 
-sudo install -o root -g root -m 755 -d ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER}
-sudo install -o root -g root -m 644 -t ${BASE_FOLDER} ${CONFIG}
-sudo install -o root -g root -m 644 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1 ${VM_FOLDER}/example_vm1/*
-sudo install -o root -g root -m 640 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER} ${VM_FOLDER}/example_vm1/${METADATA_FOLDER}/*
-sudo install -o root -g root -m 755 -T virt-compose.sh ${BIN_FOLDER}/virt-compose
+echo "Installing config in: ${BASE_FOLDER}"
+echo "Installing command in: ${BIN_FOLDER}"
+
+sudo install -v -o root -g root -m 755 -d ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER}
+sudo install -v -o root -g root -m 644 -t ${BASE_FOLDER} ${CONFIG}
+sudo install -v -o root -g root -m 644 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1 ${VM_FOLDER}/example_vm1/*
+sudo install -v -o root -g root -m 640 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER} ${VM_FOLDER}/example_vm1/${METADATA_FOLDER}/*
+sudo install -v -o root -g root -m 755 -d ${BIN_FOLDER}
+sudo install -v -o root -g root -m 755 -T virt-compose.sh ${BIN_FOLDER}/virt-compose

@@ -79,6 +79,7 @@
   DOMAIN_METADATA_URI="http://stovenour.net/libvirt"
   DOMAIN_METADATA_NS="stovenour"
 
+
 #
 # Define libvert VM but don't start it and add udev hooks
 #
@@ -198,7 +199,7 @@ install() {
   #   NOTE:  vm name can not contain hyphen or systemd %j breaks
   local systemd_file="${SYSTEMD_FOLDER}/virt-compose-${cfn_vm_name}@.service"
   echo >&2 "Info: Creating systemd service: ${systemd_file}"
-  cat << 'EOF' | sudo tee ${systemd_file} >> /dev/null
+  cat << EOF | sudo tee ${systemd_file} >> /dev/null
 [Unit]
 Description=virt-compose: Manage device hot-plug event for %j@/%I
 
@@ -206,6 +207,7 @@ Description=virt-compose: Manage device hot-plug event for %j@/%I
 Type=oneshot
 SyslogIdentifier=%N
 ExecStart=/bin/echo "Received vm: %j - device: /%I"
+ExecStart=${BIN_FOLDER}/virt-compose --config ${BASE_FOLDER}/${CONFIG} attach-device %j /%I
 
 [Install]
 WantedBy=multi-user.target
@@ -255,6 +257,7 @@ locate_device() {
   done
   return $return_val
 }
+
 
 #
 # Returns a device id used as an index key in the metadata
@@ -439,6 +442,7 @@ metadata_remove_device() {
   return $return_val
 }
 
+
 gen_device_xml() {
   local devbus="$((10#$1))"; local devnum="$((10#$2))"  #convert strings with leading zeros to base10 ints
   cat <<EOF
@@ -448,10 +452,8 @@ gen_device_xml() {
   </source>
 </hostdev>
 EOF
-  # printf "<address domain='0x%x' bus='0x%x' slot='0x%x' function='0x%x'/>\n" 0 3 7 0
-  #         <address domain='0x0' bus='0x3' slot='0x7' function='0x0'/>
-
 }
+
 
 #
 # Loop over all entries in vm state (metadata)
@@ -662,6 +664,7 @@ EOF
   return 0
 }
 
+
 #
 # TODO - Need to implement for host start/stop
 #
@@ -671,6 +674,7 @@ start_all() {
   echo >&2 "Error: start all not implemented yet"
 
 }
+
 
 #
 # call virsh shutdown
@@ -699,6 +703,7 @@ shutdown() {
   return 0
 }
 
+
 #
 # TODO - Need to implement for host start/stop
 #
@@ -708,6 +713,7 @@ shutdown_all() {
   echo >&2 "Error: shutdown all not implemented yet"
 
 }
+
 
 #
 # Wraps virsh attach-device and detach-device creating correct XML data
@@ -775,6 +781,7 @@ attach_device() {
   return $return_val
 }
 
+
 #
 # Wraps virsh detach-device creating correct XML data
 #
@@ -824,6 +831,7 @@ detach_device() {
   unset device
   return $return_val
 }
+
 
 #
 # Undefines the VM, removes udev hooks, and removes the image folder
@@ -905,6 +913,7 @@ read_config() {
 
   return 0
 }
+
 
 #
 # Dump usage to stdout
