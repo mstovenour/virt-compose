@@ -15,16 +15,25 @@
 #  limitations under the License.
 
 
-#  * Out of box user experience
-#     ** clone repository
-#     ** run installer, install packages
-#     ** run nets builder for example_net
-#     ** run virt-compose install example_vm
-#     ** run virt-compose start example_vm
-#     ** run virt-compose shutdown example_vm
-#     ** run virt-compose undefine example_vm
+#  Out of box user experience
+#    • install dependent packages (virsh, virt-install, etc.)
+#    • download a qcow2 vm image and create cloud-init user/meta-data files
+#    • clone this repository
+#    • run sudo install.sh
+#    • run nets builder for example_net
+#    • create vm definition folder and yaml file (copy example_vm1)
+#    • run virt-compose install example_vm1
+#    • run virt-compose start example_vm1
+#    • run virt-compose shutdown example_vm1
+#    • run virt-compose undefine example_vm1
 
 # To Do
+#  [ ] Update README.md with dependency information
+#  [ ] Update README.md with getting started steps
+#  [ ] Update README.md with definition of the vm yaml file
+#  [ ] Update README.md with libvirt auto-start/stop interactions
+#  [ ] Script to install kvm packages (dependencies of installer?)
+#  [ ] Script to build out networks from nets/* or just use virsh?
 #  [X] Rename virt-compose.sh to just virt-compose
 #  [X] Create installer
 #       • Create /etc/virt-compose
@@ -32,10 +41,7 @@
 #       • Install ./vm/* /etc/virt-compose/vm
 #       • Install ./virt-compose /usr/bin
 #
-#  [ ] Script to install kvm packages (dependencies of installer?)
-#  [ ] Script to build out networks from nets/* or just use virsh?
 #  [X] Create Repository
-
 #  [X] Code install
 #  [X]  ** Update install to create systemd service
 #  [X] Code undefine
@@ -44,41 +50,32 @@
 #  [X] Code detach-device
 #  [x] Code start
 #  [X]  ** Update to create udev links
-#  [ ] Code start-all
+#  [X] Code start-all
 #  [x] Code shutdown
 #  [X]  ** Update to remove udev links
-#  [ ] Code shutdown-all
-
-#  [X] Fix: Ensure domain state is correct before operation
-#         Otherwise metadata and <hostdev> entries can get out of sync!
-#       • Ensure domain doesn't exist before calling "install"
-#       • Check if domain exists and is stopped before calling "start"
-#       • Check if domain exists and is running before calling "shutdown"
-#       • Check if domain exists before calling "undefine"
-#  [X] Fix: Need to ensure VM name never contains a hyphen
-#         Otherwise systemd service name parsing will fail
-
+#  [X] Code shutdown-all
 
 # Config bootstrap resolution
 #   Config file full path; defaults to hardcoded value
 #   Config file full path; can be overiden on comand line
 #   All other config defaults to hardcoded values
-#   All other config can be overidden in the config file GLOBALS map
+#   All other config can be overidden in the config file GLOBAL map
 
 
 # Global Variables
-  QEMU_URI="qemu:///system"
-  VOLUME_PATH="/var/lib/libvirt/images"
-  BASE_FOLDER="/etc/virt-compose"
-  CONFIG="virt-compose.yaml"
-  VM_FOLDER="vm"
-  METADATA_FOLDER="cloud-init"
   BIN_FOLDER="/usr/bin"
   SYSTEMD_FOLDER="/etc/systemd/system"
   UDEV_RULES_FOLDER="/etc/udev/rules.d"
+  QEMU_URI="qemu:///system"
+  BASE_FOLDER="/etc/virt-compose"
+  CONFIG="virt-compose.yaml"
   DOMAIN_METADATA_URI="http://stovenour.net/libvirt"
   DOMAIN_METADATA_NS="stovenour"
 
+  VOLUME_PATH="/var/lib/libvirt/images"
+  VM_FOLDER="vm"
+  METADATA_FOLDER="cloud-init"
+  SHUTDOWN_WAIT=120
 
 #
 # Install libvert VM and add udev hooks but don't start it
@@ -88,8 +85,7 @@ install() {
 
   # Ensure domain does not exist; status should return error
   domain_running
-  local ret_val=$?
-  if [ $ret_val -lt 2 ]; then
+  if [ $? -lt 2 ]; then
     echo >&2 "Error: VM ${cfn_vm_name} is already installed, not installing."
     return 1
   fi
@@ -97,17 +93,17 @@ install() {
   # Retrieve the bootDisk variables
   cfn_image_path=$(yq e '.bootDisk.imageLocation' $cfn_vm_def)
   if [ $? -ne 0 ] || [ -z "$cfn_image_path" ]; then
-    echo >&2 "Error: Failed to read bootDisk/imageLocation in config: ${cfn_config_file}"
+    echo >&2 "Error: Failed to read bootDisk/imageLocation in config: ${cfn_vm_def}"
     return 1
   fi
   cfn_boot_size=$(yq e '.bootDisk.size' $cfn_vm_def)
   if [ $? -ne 0 ] || [ -z "$cfn_boot_size" ]; then
-    echo >&2 "Error: Failed to read bootDisk/size in config: ${cfn_config_file}"
+    echo >&2 "Error: Failed to read bootDisk/size in config: ${cfn_vm_def}"
     return 1
   fi
   cfn_os_variant=$(yq e '.bootDisk.osVariant' $cfn_vm_def)
   if [ $? -ne 0 ] || [ -z "$cfn_os_variant" ]; then
-    echo >&2 "Error: Failed to read bootDisk/osVariant in config: ${cfn_os_variant}"
+    echo >&2 "Error: Failed to read bootDisk/osVariant in config: ${cfn_vm_def}"
     return 1
   fi
 
@@ -685,13 +681,30 @@ EOF
 
 
 #
-# TODO - Need to implement for host start/stop
+# systemd service uses this to start all the autoStart VMs on host boot
 #
 start_all() {
-  echo >&2 "Info: start-all:  using VM definition: ${cfn_vm_folder}"
+  echo >&2 "Info: start-all"
 
-  echo >&2 "Error: start-all not implemented yet"
+  local file
+  for file in "${BASE_FOLDER}/${VM_FOLDER}/*" ; do
+    if [ -d "$file" ]; then
+      cfn_vm_name=$file
+      cfn_vm_folder="${BASE_FOLDER}/${VM_FOLDER}/${cfn_vm_name}"
+      cfn_vm_def="${cfn_vm_folder}/${cfn_vm_name}.yaml"
+      echo >&2 "Checking vm configuration: ${cfn_vm_def}"
 
+      local auto_start=$(yq e '.autoStart' $cfn_vm_def)
+      if [ $? -ne 0 ] || [ -z "$auto_start" ]; then
+        echo >&2 "Error: Failed to read autoStart in config ${cfn_vm_def}. Skipping VM."
+      elif [ "$auto_start" -eq "true" ]; then
+        echo >&2 "Starting vm ${cfn_vm_name}"
+        start || echo >&2 "Error: Failed to auto-start ${cfn_vm_name}"
+      fi
+    fi
+  done
+
+  return 0
 }
 
 
@@ -735,13 +748,59 @@ shutdown() {
 
 
 #
-# TODO - Need to implement for host start/stop
+# systemd service uses this to shutdown all VMs on host shutdown
 #
 shutdown_all() {
-  echo >&2 "Info: shutdown-all:  using VM folder: ${cfn_vm_folder}"
+  echo >&2 "Info: shutdown-all"
 
-  echo >&2 "Error: shutdown-all not implemented yet"
+  local wait_list=""
+  local file
+  for file in "${BASE_FOLDER}/${VM_FOLDER}/*" ; do
+    if [ -d "$file" ]; then
+      cfn_vm_name=$file
+      cfn_vm_folder="${BASE_FOLDER}/${VM_FOLDER}/${cfn_vm_name}"
+      cfn_vm_def="${cfn_vm_folder}/${cfn_vm_name}.yaml"
+      echo >&2 "Checking vm configuration: ${cfn_vm_def}"
 
+      local auto_start=$(yq e '.autoStart' $cfn_vm_def)
+      if [ $? -ne 0 ] || [ -z "$auto_start" ]; then
+        echo >&2 "Error: Failed to read autoStart in config ${cfn_vm_def}. Skipping VM."
+      elif [ "$auto_start" -eq "true" ]; then
+        echo >&2 "Shutting down vm ${cfn_vm_name}"
+        stop || echo >&2 "Error: Failed to shutdown ${cfn_vm_name}"
+        wait_list+="${cfn_vm_name} "
+      fi
+    fi
+  done
+
+  echo >&2 "Info: Waiting for vms to shutdown. Timeout ${SHUTDOWN_WAIT} seconds."
+  local remaining_wait_list
+  local timeout=$SHUTDOWN_WAIT
+  [ $timeout -lt 0 ] && timeout=0
+  while [ -n $wait_list ] && [ $timeout -gt 0 ]; do
+    remaining_wait_list=""
+    for cfn_vm_name in $wait_list; do
+      if ! domain_running; then
+        echo >&2 "Info: Shutdown success:  ${vm}"
+      else
+        remaining_wait_list+="${vm} "
+      fi
+    done
+    wait_list=$remaining_wait_list
+    if [ -n $wait_list ]; then
+      sleep 1
+      timeout-=1
+    fi
+  done
+  if [ -n $wait_list ]; do
+    echo -n >&2 "Warning: Timeout reached. Remaining VMs:"
+    for cfn_vm_name in $wait_list; do
+      echo -n >&2 " ${cfn_vm_name}"
+    done
+    echo >&2
+  fi
+
+  return 0
 }
 
 
@@ -755,8 +814,7 @@ attach_device() {
 
   # Ensure domain exists
   domain_running
-  local ret_val=$?
-  if [ $ret_val -gt 1 ]; then
+  if [ $? -gt 1 ]; then
     echo >&2 "Error: VM ${cfn_vm_name} is not installed."
     return 1
   fi
@@ -824,8 +882,7 @@ detach_device() {
 
   # Ensure domain exists
   domain_running
-  local ret_val=$?
-  if [ $ret_val -gt 1 ]; then
+  if [ $? -gt 1 ]; then
     echo >&2 "Error: VM ${cfn_vm_name} is not installed."
     return 1
   fi
@@ -879,8 +936,7 @@ undefine() {
 
   # Ensure domain exists
   domain_running
-  local ret_val=$?
-  if [ $ret_val -gt 1 ]; then
+  if [ $? -gt 1 ]; then
     echo >&2 "Error: VM ${cfn_vm_name} is not installed."
     return 1
   fi

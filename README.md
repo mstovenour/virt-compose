@@ -33,7 +33,7 @@
 <!-- STATUS -->
 ## Status
 
-This package is still under construction.  It should be functional enough to use but it has only been tested with a single vm usecase.  The start_all and stop_all functions have not been implemented yet.  I will create a release tag and change this message once it is feature coplete.
+This package is still under construction.  This readme needs more work.  The script is feature complete but needs a lot of testing.  I will create a release tag and change this message once testing is coplete.
 
 <!-- OVERVIEW -->
 ## Overview

@@ -1,12 +1,11 @@
 GLOBAL:
-  QEMU_URI: qemu:///system
-  VOLUME_PATH: /var/lib/libvirt/images
-  # BASE_FOLDER: /etc/virt-compose
-  # BASE_FOLDER: .
-  BASE_FOLDER: /home/michael/virt-compose-etc
-  VM_FOLDER: vm
-  METADATA_FOLDER: cloud-init
-  # BIN_FOLDER: /usr/bin
   BIN_FOLDER: /home/michael/virt-compose-bin
   SYSTEMD_FOLDER: /etc/systemd/system
   UDEV_RULES_FOLDER: /etc/udev/rules.d
+  # BASE_FOLDER: .
+  BASE_FOLDER: /home/michael/virt-compose-etc
+
+  VOLUME_PATH: /var/lib/libvirt/images
+  VM_FOLDER: vm
+  METADATA_FOLDER: cloud-init
+  SHUTDOWN_WAIT: 120
