@@ -65,7 +65,7 @@ Actions read VM configuration from: `/etc/virt-compose/vm/{vm_name}/{vm_name}.ya
     - Wraps the virsh shutdown command
     - Deletes the udev rules for each defined USB host device hot-plug event
   * `shutdown-all`
-    - Calls: `shutdown` for every VM definition
+    - Calls: `shutdown` for every VM definition where autoStart=true
   * `attach-device {vm_name} {$devpath}`
     - Calls: `virsh attach-device`
     - Wraps the virsh attach-device command, locating the IDs, creating the necessary XML file, etc.

@@ -687,18 +687,17 @@ start_all() {
   echo >&2 "Info: start-all"
 
   local file
-  for file in "${BASE_FOLDER}/${VM_FOLDER}/*" ; do
+  for file in ${BASE_FOLDER}/${VM_FOLDER}/* ; do
     if [ -d "$file" ]; then
-      cfn_vm_name=$file
-      cfn_vm_folder="${BASE_FOLDER}/${VM_FOLDER}/${cfn_vm_name}"
-      cfn_vm_def="${cfn_vm_folder}/${cfn_vm_name}.yaml"
-      echo >&2 "Checking vm configuration: ${cfn_vm_def}"
+      cfn_vm_name=$(basename "${file}")
+      cfn_vm_def="${file}/${cfn_vm_name}.yaml"
+      echo >&2 "Info: Checking vm configuration: ${cfn_vm_def}"
 
       local auto_start=$(yq e '.autoStart' $cfn_vm_def)
       if [ $? -ne 0 ] || [ -z "$auto_start" ]; then
         echo >&2 "Error: Failed to read autoStart in config ${cfn_vm_def}. Skipping VM."
-      elif [ "$auto_start" -eq "true" ]; then
-        echo >&2 "Starting vm ${cfn_vm_name}"
+      elif [ "x$auto_start"="xtrue" ]; then
+        echo >&2 "Info: Starting vm ${cfn_vm_name}"
         start || echo >&2 "Error: Failed to auto-start ${cfn_vm_name}"
       fi
     fi
@@ -755,44 +754,45 @@ shutdown_all() {
 
   local wait_list=""
   local file
-  for file in "${BASE_FOLDER}/${VM_FOLDER}/*" ; do
+  for file in ${BASE_FOLDER}/${VM_FOLDER}/* ; do
     if [ -d "$file" ]; then
-      cfn_vm_name=$file
-      cfn_vm_folder="${BASE_FOLDER}/${VM_FOLDER}/${cfn_vm_name}"
-      cfn_vm_def="${cfn_vm_folder}/${cfn_vm_name}.yaml"
-      echo >&2 "Checking vm configuration: ${cfn_vm_def}"
+      cfn_vm_name=$(basename "${file}")
+      cfn_vm_def="${file}/${cfn_vm_name}.yaml"
+      echo >&2 "Info: Checking vm configuration: ${cfn_vm_def}"
 
       local auto_start=$(yq e '.autoStart' $cfn_vm_def)
       if [ $? -ne 0 ] || [ -z "$auto_start" ]; then
         echo >&2 "Error: Failed to read autoStart in config ${cfn_vm_def}. Skipping VM."
-      elif [ "$auto_start" -eq "true" ]; then
-        echo >&2 "Shutting down vm ${cfn_vm_name}"
-        stop || echo >&2 "Error: Failed to shutdown ${cfn_vm_name}"
+      elif [ "x$auto_start"="xtrue" ]; then
+        echo >&2 "Info: Shutting down vm ${cfn_vm_name}"
+        shutdown || echo >&2 "Error: Failed to shutdown ${cfn_vm_name}"
         wait_list+="${cfn_vm_name} "
       fi
     fi
   done
 
-  echo >&2 "Info: Waiting for vms to shutdown. Timeout ${SHUTDOWN_WAIT} seconds."
   local remaining_wait_list
   local timeout=$SHUTDOWN_WAIT
-  [ $timeout -lt 0 ] && timeout=0
-  while [ -n $wait_list ] && [ $timeout -gt 0 ]; do
-    remaining_wait_list=""
-    for cfn_vm_name in $wait_list; do
-      if ! domain_running; then
-        echo >&2 "Info: Shutdown success:  ${vm}"
-      else
-        remaining_wait_list+="${vm} "
+  if [ -n "$wait_list" ]; then
+    echo >&2 "Info: Waiting for vms to shutdown. Timeout ${SHUTDOWN_WAIT} seconds."
+    [ $timeout -lt 0 ] && timeout=0
+    while [ -n "$wait_list" ] && [ $timeout -gt 0 ]; do
+      remaining_wait_list=""
+      for cfn_vm_name in $wait_list; do
+        if ! domain_running; then
+          echo >&2 "Info: Shutdown:  ${cfn_vm_name}"
+        else
+          remaining_wait_list+="${cfn_vm_name} "
+        fi
+      done
+      wait_list=$remaining_wait_list
+      if [ -n "$wait_list" ]; then
+        sleep 1
+        ((timeout--))
       fi
     done
-    wait_list=$remaining_wait_list
-    if [ -n $wait_list ]; then
-      sleep 1
-      timeout-=1
-    fi
-  done
-  if [ -n $wait_list ]; do
+  fi
+  if [ -n "$wait_list" ]; then
     echo -n >&2 "Warning: Timeout reached. Remaining VMs:"
     for cfn_vm_name in $wait_list; do
       echo -n >&2 " ${cfn_vm_name}"

@@ -1,5 +1,5 @@
 name: example_vm1
-autoStart: false
+autoStart: true
 bootDisk:
   imageLocation: /home/michael/debian-images/debian-12-generic-amd64-20240717-1811.qcow2
   size: 10G
