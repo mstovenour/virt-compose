@@ -15,12 +15,92 @@
 #  limitations under the License.
 
 # Global Variables
+  BIN_FOLDER="/usr/bin"
+  SYSTEMD_FOLDER="/etc/systemd/system"
   BASE_FOLDER="/etc/virt-compose"
   CONFIG="virt-compose.yaml"
   VM_FOLDER="vm"
   METADATA_FOLDER="cloud-init"
-  BIN_FOLDER="/usr/bin"
 
+
+install() {
+  echo "Info: Installing config in: ${BASE_FOLDER}"
+  sudo install -v -o root -g root -m 755 -d ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER}
+  sudo install -v -o root -g root -m 644 -t ${BASE_FOLDER} ${CONFIG}
+  sudo install -v -o root -g root -m 644 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1 ${VM_FOLDER}/example_vm1/*
+  sudo install -v -o root -g root -m 640 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER} ${VM_FOLDER}/example_vm1/${METADATA_FOLDER}/*
+
+  echo "Info: Installing command in: ${BIN_FOLDER}"
+  sudo install -v -o root -g root -m 755 -d ${BIN_FOLDER}
+  sudo install -v -o root -g root -m 755 -T virt-compose.sh ${BIN_FOLDER}/virt-compose
+
+  echo "Info: Installing systemd service in: ${SYSTEMD_FOLDER}"
+  sudo install -v -o root -g root -m 755 -d ${SYSTEMD_FOLDER}
+  local systemd_file="${SYSTEMD_FOLDER}/virt-compose.service"
+  echo >&2 "Info: Creating systemd service: ${systemd_file}"
+  cat << EOF | sudo tee ${systemd_file} >> /dev/null
+[Unit]
+Description=virt-compose: Manage VM auto-start and auto-shutdown
+Wants=libvirtd.service
+After=network.target
+After=time-sync.target
+After=libvirtd.service
+After=virt-guest-shutdown.target
+Before=libvirt-guests.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/virt-compose --config /etc/virt-compose/virt-compose.yaml start-all
+ExecStop=/usr/bin/virt-compose --config /etc/virt-compose/virt-compose.yaml shutdown-all
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  sudo systemctl daemon-reload
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to reload systemd after creating service"
+  fi
+
+  echo >&2 "Info: Install completed"
+
+  return 0
+}
+
+uninstall() {
+  echo "Info: Removing config from: ${BASE_FOLDER}"
+  sudo rm ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER}/*
+  sudo rmdir ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER}
+  sudo rm ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/*
+  sudo rmdir ${BASE_FOLDER}/${VM_FOLDER}/example_vm1
+  sudo rmdir --ignore-fail-on-non-empty ${BASE_FOLDER}/${VM_FOLDER}
+  sudo rm ${BASE_FOLDER}/${CONFIG}
+  sudo rmdir --ignore-fail-on-non-empty ${BASE_FOLDER}
+
+  echo "Info: Removing command from: ${BIN_FOLDER}"
+  sudo rm ${BIN_FOLDER}/virt-compose
+  sudo rmdir --ignore-fail-on-non-empty ${BIN_FOLDER}
+
+  echo "Info: Removing systemd service from: ${SYSTEMD_FOLDER}"
+  local systemd_file="${SYSTEMD_FOLDER}/virt-compose.service"
+  echo >&2 "Info: Removing systemd service: ${systemd_file}"
+  sudo rm $systemd_file
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to remove ${systemd_file}"
+  fi
+
+  sudo systemctl daemon-reload
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to reload systemd after removing service"
+  fi
+
+  sudo rmdir --ignore-fail-on-non-empty ${SYSTEMD_FOLDER}
+
+  echo >&2 "Info: Uninstall completed"
+
+  return 0
+}
 
 #
 # Reads GLOBAL section from ${cfn_config_file} and exports the map of variables
@@ -48,7 +128,7 @@ read_config() {
 usage() {
   cat << HEREDOC
 
-  Usage: $progname [-h|--help] [-c|--config]
+  Usage: $progname [-h|--help] [-c|--config] [uninstall]
 
   Installs files from the current directory into folders specified by the config file, if specified.
   If the config file is not specified default folders are used (${BIN_FOLDER} and ${BASE_FOLDER}).
@@ -57,6 +137,7 @@ usage() {
     -h, --help          Show this help message and exit
     -c, --config        Specify full config file path
                           (default: ${BASE_FOLDER}/${CONFIG})
+    [uninstall]         Will remove files previously installed
 
 HEREDOC
 }
@@ -66,7 +147,7 @@ HEREDOC
 # main()
 #
 
-commands=("install")
+commands=("install" "sudo")
 command_check=0
 for command in "${commands[@]}"; do
   if ! command -v "$command" >/dev/null 2>&1; then
@@ -93,12 +174,12 @@ done
 
 if ! read_config; then exit 1; fi
 
-echo "Installing config in: ${BASE_FOLDER}"
-echo "Installing command in: ${BIN_FOLDER}"
+if [ "x$1" = "xuninstall" ]; then
+  uninstall
+elif [ -z "$1" ]; then
+  install
+else
+  echo >&2 "ERROR: unrecognized action --> $1"; usage; exit 1
+fi
 
-sudo install -v -o root -g root -m 755 -d ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER}
-sudo install -v -o root -g root -m 644 -t ${BASE_FOLDER} ${CONFIG}
-sudo install -v -o root -g root -m 644 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1 ${VM_FOLDER}/example_vm1/*
-sudo install -v -o root -g root -m 640 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER} ${VM_FOLDER}/example_vm1/${METADATA_FOLDER}/*
-sudo install -v -o root -g root -m 755 -d ${BIN_FOLDER}
-sudo install -v -o root -g root -m 755 -T virt-compose.sh ${BIN_FOLDER}/virt-compose
+exit 0

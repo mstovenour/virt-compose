@@ -1097,7 +1097,7 @@ if ! read_config; then exit 1; fi
 cfn_vm_name=${2:-''}
 # Check for presense of VM name parameter
 if [[ -z "$cfn_vm_name" && ! "$1" =~ ^(start-all|shutdown-all)$ ]]; then
-  echo >&2 "ERROR: vm_name is required."; usage; exit 1
+  echo >&2 "ERROR: vm_name is required for $1."; usage; exit 1
 fi
 # Ensure vm name does not conain a hyphen
 if [[ "$cfn_vm_name" =~ "-" ]]; then
