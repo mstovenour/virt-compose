@@ -25,10 +25,13 @@
 
 install() {
   echo "Info: Installing config in: ${BASE_FOLDER}"
-  sudo install -v -o root -g root -m 755 -d ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER}
-  sudo install -v -o root -g root -m 644 -t ${BASE_FOLDER} ${CONFIG}
-  sudo install -v -o root -g root -m 644 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1 ${VM_FOLDER}/example_vm1/*
-  sudo install -v -o root -g root -m 640 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER} ${VM_FOLDER}/example_vm1/${METADATA_FOLDER}/*
+  sudo install -v -o root -g libvirt -m 775 -d ${BASE_FOLDER}
+  sudo install -v -o root -g libvirt -m 775 -d ${BASE_FOLDER}/${VM_FOLDER}
+  sudo install -v -o root -g libvirt -m 775 -d ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/
+  sudo install -v -o root -g libvirt -m 775 -d ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER}
+  sudo install -v -o root -g libvirt -m 664 -t ${BASE_FOLDER} ${CONFIG}
+  sudo install -v -o root -g libvirt -m 664 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1 ${VM_FOLDER}/example_vm1/*
+  sudo install -v -o root -g libvirt -m 660 -t ${BASE_FOLDER}/${VM_FOLDER}/example_vm1/${METADATA_FOLDER} ${VM_FOLDER}/example_vm1/${METADATA_FOLDER}/*
 
   echo "Info: Installing command in: ${BIN_FOLDER}"
   sudo install -v -o root -g root -m 755 -d ${BIN_FOLDER}
@@ -62,6 +65,14 @@ EOF
   if [ $? -ne 0 ]; then
     echo >&2 "Error: Failed to reload systemd after creating service"
   fi
+  sudo systemctl enable virt-compose.service
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to enable systemd service"
+  fi
+  sudo systemctl start virt-compose.service
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to start systemd service"
+  fi
 
   echo >&2 "Info: Install completed"
 
@@ -83,6 +94,15 @@ uninstall() {
   sudo rmdir --ignore-fail-on-non-empty ${BIN_FOLDER}
 
   echo "Info: Removing systemd service from: ${SYSTEMD_FOLDER}"
+  sudo systemctl stop virt-compose.service
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to stop systemd service"
+  fi
+  sudo systemctl disable virt-compose.service
+  if [ $? -ne 0 ]; then
+    echo >&2 "Error: Failed to disable systemd service"
+  fi
+
   local systemd_file="${SYSTEMD_FOLDER}/virt-compose.service"
   echo >&2 "Info: Removing systemd service: ${systemd_file}"
   sudo rm $systemd_file

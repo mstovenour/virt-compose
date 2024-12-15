@@ -108,6 +108,7 @@ install() {
   fi
 
   # Create boot device
+  echo >&2 "Info: Creating boot and metadata images in ${VOLUME_PATH}/${cfn_vm_name}"
   mkdir -vp ${VOLUME_PATH}/${cfn_vm_name}
   if [ $? -ne 0 ]; then
     echo >&2 "Error: Failed to make image folder: ${VOLUME_PATH}/${cfn_vm_name}"
@@ -116,6 +117,7 @@ install() {
 
   # Make a copy of the image
   # TODO:  This assumes the input file is a qcow2 and no conversions are necessary
+  echo >&2 "Info: Copying image from ${cfn_image_path}"
   cfn_boot_path=${VOLUME_PATH}/${cfn_vm_name}/${cfn_vm_name}.qcow2
   cp ${cfn_image_path} ${cfn_boot_path}
   if [ $? -ne 0 ]; then
@@ -212,9 +214,6 @@ Type=oneshot
 SyslogIdentifier=%N
 ExecStart=/bin/echo "Received vm: %j - device: /%I"
 ExecStart=${BIN_FOLDER}/virt-compose --config ${BASE_FOLDER}/${CONFIG} attach-device %j /%I
-
-[Install]
-WantedBy=multi-user.target
 EOF
 
   sudo systemctl daemon-reload
