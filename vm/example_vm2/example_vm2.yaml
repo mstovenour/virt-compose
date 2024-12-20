@@ -1,0 +1,16 @@
+name: example_vm2
+autoStart: false
+bootDisk:
+  imageLocation: /home/michael/debian-images/debian-12-generic-amd64-20240717-1811.qcow2
+  size: 10G
+  osVariant: debian10
+cloud-init:
+  folder: cloud-init
+install:
+  parameters:
+    - ram: "1024"
+    - vcpu: "1"
+    - network: "bridge=br0,model=virtio"
+    - noautoconsole:
+    - serial: "pty"
+    - console: "pty"

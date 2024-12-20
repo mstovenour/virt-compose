@@ -1,0 +1,5 @@
+GLOBAL:
+  VOLUME_PATH: /var/lib/libvirt/images
+  VM_FOLDER: vm
+  METADATA_FOLDER: cloud-init
+  SHUTDOWN_WAIT: 120

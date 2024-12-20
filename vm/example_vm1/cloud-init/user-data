@@ -1,0 +1,22 @@
+#cloud-config
+
+# Setup Users with ssh keys so that I can log in into new machine
+ssh_pwauth: true
+timezone: US/Central
+
+users:
+    - name: michael
+      lock_passwd: False
+      plain_text_passwd: 'secret'
+      groups: adm, sudo
+      shell: /bin/bash
+      sudo: ALL=(ALL) NOPASSWD:ALL
+      ssh_authorized_keys:
+          - ssh-rsa AAAAB3N....ONwUVPyxN Test
+
+package_update: true
+package_upgrade: true
+packages:
+    - byobu
+runcmd:
+    - sed -i '/^\s\+PS1='\''${debian_chroot:+($debian_chroot)}\\\[/c\    PS1="${debian_chroot:+($debian_chroot)}\\[\\e[00;32m\\]\\u\\[\\e[00m\\]@\\[\\e[00;31m\\]\\h\\[\\e[00m\\]:\\[\\e[00;36m\\]\\w\\[\\e[00m\\]\\$ "' /home/michael/.bashrc

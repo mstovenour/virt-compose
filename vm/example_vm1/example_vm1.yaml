@@ -1,0 +1,25 @@
+name: example_vm1
+autoStart: true
+bootDisk:
+  imageLocation: /home/michael/debian-images/debian-12-generic-amd64-20240717-1811.qcow2
+  size: 10G
+  osVariant: debian10
+cloud-init:
+  folder: cloud-init
+usbHostDev:
+  - name: usb-FTDI_TTL232R-3V3_FTF50XXM
+    vendor: "0403"
+    product: "6001"
+    serial: "FTF50XXM"
+  - name: usb-FTDI_TTL232R_FTDPY3VD
+    vendor: "0403"
+    product: "6001"
+    serial: "FTDPY3VD"
+install:
+  parameters:
+    - ram: "1024"
+    - vcpu: "1"
+    - network: "bridge=br0,model=virtio"
+    - noautoconsole:
+    - serial: "pty"
+    - console: "pty"

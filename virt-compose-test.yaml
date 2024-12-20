@@ -1,0 +1,12 @@
+GLOBAL:
+  BIN_FOLDER: /home/michael/virt-compose-bin
+  SYSTEMD_FOLDER: /home/michael/virt-compose-systemd
+  #UDEV_RULES_FOLDER: /etc/udev/rules.d
+  UDEV_RULES_FOLDER: /home/michael/virt-compose-systemd
+  # BASE_FOLDER: .
+  BASE_FOLDER: /home/michael/virt-compose-etc
+
+  VOLUME_PATH: /var/lib/libvirt/images
+  VM_FOLDER: vm
+  METADATA_FOLDER: cloud-init
+  SHUTDOWN_WAIT: 120
