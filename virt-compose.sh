@@ -638,7 +638,7 @@ start() {
         udev_rules+="ATTRS{idVendor}==\"${device[vendor]}\", "
         udev_rules+="ATTRS{idProduct}==\"${device[product]}\", "
         udev_rules+="ATTRS{serial}==\"${device[serial]}\", "
-        udev_rules+='PROGRAM="/usr/bin/systemd-escape -p --template=virt-compose-example_vm1@.service $env{DEVNAME}", '
+        udev_rules+="PROGRAM=\"/usr/bin/systemd-escape -p --template=virt-compose-${cfn_vm_name}@.service \$env{DEVNAME}\", "
         udev_rules+='TAG+="systemd", ENV{SYSTEMD_WANTS}+="%c"'
         udev_rules+=$'\n'
 
